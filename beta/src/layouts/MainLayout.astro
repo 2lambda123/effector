@@ -30,7 +30,6 @@ const currentPage = Astro.url.pathname;
     :root {
       --gutter: 0.5rem;
       --content-max-width: 56rem;
-      --header-max-width: calc(100% - 1rem);
     }
 
     main {
@@ -76,7 +75,6 @@ const currentPage = Astro.url.pathname;
     @media (min-width: 768px) {
       :root {
         --sidebar-left-width: 20rem;
-        --header-max-width: calc(var(--sidebar-left-width) + var(--content-max-width));
       }
 
       .layout {
