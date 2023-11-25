@@ -15,6 +15,24 @@ import {
 } from 'effector'
 import {argumentHistory} from 'effector/fixtures'
 
+const consoleError = console.error
+
+beforeAll(() => {
+  console.error = (message, ...args) => {
+    if (
+      String(message).includes('forward') ||
+      String(message).includes('guard') ||
+      String(message).includes('object with handlers')
+    )
+      return
+    consoleError(message, ...args)
+  }
+})
+
+afterAll(() => {
+  console.error = consoleError
+})
+
 test('usage with domain', async () => {
   const app = createDomain()
   const add = app.createEvent<number>()
@@ -44,6 +62,25 @@ test('usage without domain', async () => {
   await allSettled(addFx, {scope})
   expect(scope.getState($count)).toBe(15)
   expect($count.getState()).toBe(0)
+})
+describe('getState cases', () => {
+  test('getState on default value works', () => {
+    const $store = createStore("default value")
+  
+    const scope = fork();
+  
+    expect(scope.getState($store)).toBe("default value")
+  })
+
+  test('getState on default value (store with serialize ignore)', () => {
+    const $store = createStore("default value", {
+      serialize: "ignore"
+    })
+  
+    const scope = fork();
+  
+    expect(scope.getState($store)).toBe("default value")
+  })
 })
 describe('units without sids support', () => {
   test('store without sid should be supported', () => {

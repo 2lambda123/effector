@@ -46,6 +46,11 @@ module.exports = function (babel, options = {}) {
     importReactNames,
     reactSsr,
   } = normalizeOptions(options)
+  if (reactSsr) {
+    console.error(
+      '[effector/babel-plugin]: reactSsr option is deprecated, use imports from "effector-react" without aliases or /scope',
+    )
+  }
   const factoriesUsed = factories.length > 0
   const hasRelativeFactories = factories.some(
     fab => fab.startsWith('./') || fab.startsWith('../'),
@@ -103,43 +108,106 @@ module.exports = function (babel, options = {}) {
       flag: combines,
       set: combineCreators,
       fn: (path, state, name, id) =>
-        setConfigForConfMethod(path, state, id, t, smallConfig, false, name),
+        setConfigForConfMethod(
+          'combine',
+          path,
+          state,
+          id,
+          t,
+          smallConfig,
+          false,
+          name,
+        ),
     },
     {
       flag: samples,
       set: sampleCreators,
       fn: (path, state, name, id) =>
-        setConfigForConfMethod(path, state, id, t, smallConfig, false, name),
+        setConfigForConfMethod(
+          'sample',
+          path,
+          state,
+          id,
+          t,
+          smallConfig,
+          false,
+          name,
+        ),
     },
     {
       flag: forwards,
       set: forwardCreators,
       fn: (path, state, name, id) =>
-        setConfigForConfMethod(path, state, id, t, smallConfig, true, name),
+        setConfigForConfMethod(
+          'forward',
+          path,
+          state,
+          id,
+          t,
+          smallConfig,
+          true,
+          name,
+        ),
     },
     {
       flag: guards,
       set: guardCreators,
       fn: (path, state, name, id) =>
-        setConfigForConfMethod(path, state, id, t, smallConfig, false, name),
+        setConfigForConfMethod(
+          'guard',
+          path,
+          state,
+          id,
+          t,
+          smallConfig,
+          false,
+          name,
+        ),
     },
     {
       flag: attaches,
       set: attachCreators,
       fn: (path, state, name, id) =>
-        setConfigForConfMethod(path, state, id, t, smallConfig, true, name),
+        setConfigForConfMethod(
+          'attach',
+          path,
+          state,
+          id,
+          t,
+          smallConfig,
+          true,
+          name,
+        ),
     },
     {
       flag: splits,
       set: splitCreators,
       fn: (path, state, name, id) =>
-        setConfigForConfMethod(path, state, null, t, smallConfig, false, name),
+        setConfigForConfMethod(
+          'split',
+          path,
+          state,
+          null,
+          t,
+          smallConfig,
+          false,
+          name,
+        ),
     },
     {
       flag: apis,
       set: apiCreators,
       fn: (path, state, name, id) =>
-        setConfigForConfMethod(path, state, null, t, smallConfig, false, name),
+        setConfigForConfMethod(
+          'createApi',
+          path,
+          state,
+          null,
+          t,
+          smallConfig,
+          false,
+          name,
+        ),
     },
     {
       flag: merges,
@@ -180,6 +248,7 @@ module.exports = function (babel, options = {}) {
       set: reactMethods.createGate,
       fn: (path, state, name, id) =>
         setConfigForConfMethod(
+          'gate',
           path,
           state,
           id,
@@ -357,6 +426,7 @@ module.exports = function (babel, options = {}) {
     pre() {
       this.effector_ignoredImports = new Set()
       this.effector_withFactoryName = null
+      this.effector_units = new Map()
     },
     post() {
       this.effector_ignoredImports.clear()
@@ -370,6 +440,7 @@ module.exports = function (babel, options = {}) {
       if (this.effector_factoryPaths) {
         delete this.effector_factoryPaths
       }
+      delete this.effector_units
     },
     visitor: {
       Program: {
@@ -379,6 +450,7 @@ module.exports = function (babel, options = {}) {
       },
 
       CallExpression(path, state) {
+        state.effector_units = this.effector_units
         addFileNameIdentifier(addLoc, enableFileName, t, path, state)
 
         if (t.isIdentifier(path.node.callee)) {
@@ -416,6 +488,8 @@ module.exports = function (babel, options = {}) {
               loc.line,
               loc.column,
               debugSids,
+              state,
+              importedName,
             )
             const factoryConfig = {
               SID: JSON.stringify(sid),
@@ -707,6 +781,8 @@ function setRestoreNameAfter(
         loc.line,
         loc.column,
         debugSids,
+        state,
+        'restore',
       ),
     )
 
@@ -766,6 +842,8 @@ function setStoreNameAfter(
         loc.line,
         loc.column,
         debugSids,
+        state,
+        'store',
       ),
     )
 
@@ -793,6 +871,7 @@ function isLocalVariable(path, checkBindingName) {
   return false
 }
 function setConfigForConfMethod(
+  method,
   path,
   state,
   nameNodeId,
@@ -832,6 +911,8 @@ function setConfigForConfMethod(
         loc.line,
         loc.column,
         debugSids,
+        state,
+        method,
       ),
     )
 
@@ -894,6 +975,8 @@ function setEventNameAfter(
         loc.line,
         loc.column,
         debugSids,
+        state,
+        'event',
       ),
     )
 
@@ -942,12 +1025,22 @@ function generateStableID(
   line,
   column,
   debugSids,
+  state,
+  method,
 ) {
   const normalizedPath = stripRoot(babelRoot, fileName, false)
-  const appendix = debugSids ? `:${normalizedPath}:${varName}` : ''
-  return (
-    hashCode(`${varName} ${normalizedPath} [${line}, ${column}]`) + appendix
-  )
+
+  const key = `${normalizedPath}:${varName}:${method}`
+
+  const unitsMap = getUnitsMap(state)
+  const count = unitsMap.get(key) || 0
+  const nextCount = count + 1
+  unitsMap.set(key, nextCount)
+
+  const raw = `${nextCount}-${key}`
+
+  const appendix = debugSids ? `${raw} [${line}:${column}]` : ''
+  return hashCode(raw) + appendix
 }
 function hashCode(s) {
   let h = 0
@@ -963,4 +1056,8 @@ function property(t, field, content) {
 
 function stringProperty(t, field, value) {
   return property(t, field, t.stringLiteral(value))
+}
+
+function getUnitsMap(state) {
+  return state.effector_units
 }
